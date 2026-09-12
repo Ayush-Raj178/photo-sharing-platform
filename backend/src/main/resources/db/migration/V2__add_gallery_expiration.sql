@@ -1,0 +1,1 @@
+ALTER TABLE galleries ADD COLUMN expires_at TIMESTAMP(6) NULL;

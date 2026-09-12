@@ -1,0 +1,56 @@
+spring:
+  application:
+    name: photoshare-backend
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+  datasource:
+    url: ${DB_JDBC_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+  servlet:
+    multipart:
+      max-file-size: ${MAX_FILE_SIZE_BYTES:10485760}
+      max-request-size: ${MAX_REQUEST_SIZE_BYTES:220200960}
+server:
+  port: ${PORT:8080}
+  forward-headers-strategy: framework
+
+photoshare:
+  frontend-origin: ${FRONTEND_ORIGIN:http://localhost:5173}
+  cors-allowed-origins: ${APP_ALLOWED_ORIGINS:http://localhost:5173}
+  jwt:
+    issuer: ${JWT_ISSUER:photoshare}
+    staff-secret-base64: ${STAFF_JWT_SECRET_BASE64}
+    gallery-secret-base64: ${GALLERY_JWT_SECRET_BASE64}
+    staff-ttl-seconds: ${STAFF_JWT_TTL_SECONDS:900}
+    gallery-ttl-seconds: ${GALLERY_GRANT_TTL_SECONDS:900}
+  storage:
+    driver: ${STORAGE_DRIVER:local}
+    local-root: ${LOCAL_STORAGE_ROOT:./local-storage}
+    cloudinary:
+      cloud-name: ${CLOUDINARY_CLOUD_NAME:}
+      api-key: ${CLOUDINARY_API_KEY:}
+      api-secret: ${CLOUDINARY_API_SECRET:}
+    max-file-size-bytes: ${MAX_FILE_SIZE_BYTES:10485760}
+    max-request-size-bytes: ${MAX_REQUEST_SIZE_BYTES:220200960}
+    max-files-per-upload: ${MAX_FILES_PER_UPLOAD:20}
+    max-image-pixels: ${MAX_IMAGE_PIXELS:40000000}
+  rate-limit:
+    window-seconds: ${RATE_LIMIT_WINDOW_SECONDS:300}
+    login-attempts: ${LOGIN_RATE_LIMIT_ATTEMPTS:10}
+    login-ip-attempts: ${LOGIN_RATE_LIMIT_IP_ATTEMPTS:50}
+    pin-attempts: ${PIN_RATE_LIMIT_ATTEMPTS:5}
+    pin-ip-attempts: ${PIN_RATE_LIMIT_IP_ATTEMPTS:50}
+    registration-attempts: ${REGISTRATION_RATE_LIMIT_ATTEMPTS:5}
+    member-provision-attempts: ${MEMBER_PROVISION_RATE_LIMIT_ATTEMPTS:20}

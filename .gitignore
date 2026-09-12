@@ -1,0 +1,51 @@
+# Local environment and secrets; placeholder examples remain trackable.
+.env
+.env.*
+!.env.example
+.secrets/
+secrets/
+*credentials.local*
+demo-credentials*
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+
+# Frontend dependencies/build output.
+node_modules/
+dist/
+.vite/
+coverage/
+playwright-report/
+test-results/
+
+# Java build output; do not ignore future source migrations or wrapper files.
+target/
+build/
+.gradle/
+.m2/
+*.class
+
+# Local uploads, database state, backups, scratch output, and logs.
+uploads/
+local-storage/
+data/
+backups/
+dumps/
+tmp/
+temp/
+logs/
+*.log
+*.dump
+*.db
+*.sqlite
+*.sqlite3
+
+# Editor and OS-local files.
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
