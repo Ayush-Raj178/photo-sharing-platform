@@ -1,0 +1,29 @@
+# Vercel container deployment — multi-stage Java 17 build
+# This file is used when the Vercel backend project Root Directory is set to "backend".
+# The existing Dockerfile is preserved for other container hosts.
+
+# ── Stage 1: Build ──────────────────────────────────────────────────
+FROM maven:3.9.4-eclipse-temurin-17 AS builder
+WORKDIR /build
+
+# Copy POM first to leverage Docker layer caching for dependencies
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+
+# Copy source and build the production JAR (tests skipped — CI runs them separately)
+COPY src ./src
+RUN mvn package -DskipTests -B
+
+# ── Stage 2: Runtime ────────────────────────────────────────────────
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+
+# Copy only the built fat JAR
+COPY --from=builder /build/target/photoshare-backend-0.0.1-SNAPSHOT.jar /app/photoshare-backend.jar
+
+# The application reads PORT from the environment (default 8080 via application.yml).
+# Vercel injects PORT automatically; no hardcoded hostname.
+EXPOSE 8080
+
+# Start the Spring Boot application
+CMD ["java", "-jar", "/app/photoshare-backend.jar"]
