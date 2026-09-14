@@ -1,7 +1,13 @@
 {
   "services": {
     "frontend": {
-      "root": "frontend/"
+      "root": "frontend/",
+      "rewrites": [
+        {
+          "source": "/(.*)",
+          "destination": "/index.html"
+        }
+      ]
     },
     "backend": {
       "root": "backend/",
@@ -16,7 +22,7 @@
     },
     {
       "source": "/(.*)",
-      "destination": { "service": "frontend", "path": "/" }
+      "destination": { "service": "frontend" }
     }
   ]
 }
