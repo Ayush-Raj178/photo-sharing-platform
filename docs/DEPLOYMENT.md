@@ -1,102 +1,82 @@
 # Deployment Guide
 
-Status: Vercel full-stack deployment configuration applied. Backend runs as a container; frontend runs as a Vite static build. Both use the same GitHub monorepo as separate Vercel projects.
+Status: Vercel Services deployment configuration applied. Frontend and backend deploy together as ONE Vercel project using Vercel Services. Both services share a single public domain.
 
 ## Architecture
 
 ```text
-┌──────────────────────────┐     ┌──────────────────────────┐
-│  Vercel Project 1        │     │  Vercel Project 2        │
-│  (Container)             │     │  (Static / Vite)         │
-│                          │     │                          │
-│  Spring Boot backend     │     │  React / Vite frontend   │
-│  Root Dir: backend       │     │  Root Dir: frontend      │
-│  Dockerfile.vercel       │     │  npm run build → dist    │
-└────────┬─────────────────┘     └──────────────────────────┘
-         │
-    ┌────┴────┐
-    │         │
-    v         v
-  Aiven    Cloudinary
-  MySQL
+┌─────────────────────────────────────────────────┐
+│             ONE Vercel Project                  │
+│             (Vercel Services)                   │
+│                                                 │
+│  ┌──────────────────┐  ┌──────────────────────┐ │
+│  │ frontend service │  │ backend service      │ │
+│  │ React / Vite     │  │ Spring Boot (Docker) │ │
+│  │ root: frontend/  │  │ root: backend/       │ │
+│  │ Static → dist/   │  │ Dockerfile.vercel    │ │
+│  └──────────────────┘  └──────────┬───────────┘ │
+│                                   │             │
+│        shared public domain       │             │
+│        https://<project>.vercel.app             │
+└───────────────────────────────────┼─────────────┘
+                               ┌────┴────┐
+                               │         │
+                               v         v
+                             Aiven    Cloudinary
+                             MySQL
 ```
 
-## Vercel Backend Project (Container)
+## Root vercel.json (Vercel Services)
 
-### Import
+The root [`vercel.json`](../vercel.json) defines two services and path-based routing:
 
-1. Go to [vercel.com/new](https://vercel.com/new).
-2. Import the GitHub repository: `Ayush-Raj178/photo-sharing-platform`.
-3. Set **Root Directory** to `backend`.
-4. Vercel detects `Dockerfile.vercel` and selects the Docker builder automatically.
+```json
+{
+  "services": {
+    "frontend": {
+      "root": "frontend/"
+    },
+    "backend": {
+      "root": "backend/",
+      "runtime": "container",
+      "entrypoint": "Dockerfile.vercel"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": { "service": "backend" } },
+    { "source": "/(.*)", "destination": { "service": "frontend" } }
+  ]
+}
+```
 
-### Environment Variables
+### Routing Rules
 
-Set these in the Vercel project **Settings → Environment Variables**:
-
-| Variable | Example / Notes |
+| Request Path | Routed To |
 |---|---|
-| `PORT` | `8080` (set explicitly unless Vercel injects its own) |
-| `DB_JDBC_URL` | `jdbc:mysql://<aiven-host>:<port>/photoshare?sslMode=REQUIRED` |
-| `DB_USERNAME` | Aiven application user |
-| `DB_PASSWORD` | Aiven password (secret) |
-| `STAFF_JWT_SECRET_BASE64` | Base64 of ≥ 32 random bytes |
-| `GALLERY_JWT_SECRET_BASE64` | Different base64 signing key |
-| `STORAGE_DRIVER` | `cloudinary` |
-| `CLOUDINARY_CLOUD_NAME` | Your Cloudinary cloud name |
-| `CLOUDINARY_API_KEY` | Cloudinary API key (secret) |
-| `CLOUDINARY_API_SECRET` | Cloudinary API secret (secret) |
-| `APP_ALLOWED_ORIGINS` | Frontend Vercel URL (set after frontend deploy) |
-| `FRONTEND_ORIGIN` | Frontend Vercel URL (set after frontend deploy) |
+| `/api/health` | backend service |
+| `/api/v1/*` | backend service |
+| `/login`, `/register` | frontend service |
+| `/admin/*`, `/team/*` | frontend service |
+| `/gallery/:publicId` | frontend service |
+| `/assets/*`, `*.js`, `*.css` | frontend service (static) |
+| Everything else | frontend service |
 
-> **Note:** `APP_ALLOWED_ORIGINS` and `FRONTEND_ORIGIN` require a circular bootstrap — see [Deployment Order](#deployment-order) below.
-
-### Verify
-
-After deployment, confirm:
-
-```
-GET https://<backend-vercel-domain>/api/health
-→ {"status":"UP"}
-```
-
-### Dockerfile Strategy
-
-- `backend/Dockerfile.vercel` is the Vercel-specific multi-stage build.
-- `backend/Dockerfile` is preserved for other container hosts (Railway, Fly.io, etc.).
-- Builder stage: Maven + Eclipse Temurin 17, dependency caching via `pom.xml` copy-first, production JAR built with tests skipped.
-- Runtime stage: `eclipse-temurin:17-jre-alpine`, contains only the fat JAR.
-- Startup: `java -jar /app/photoshare-backend.jar`
-- PORT: read from `${PORT:8080}` in `application.yml`; Vercel may inject its own value.
+The `/api/(.*)` rewrite is evaluated first. All API traffic reaches the Spring Boot container. Everything else falls through to the Vite static build.
 
 ---
 
-## Vercel Frontend Project (Vite)
+## Frontend Service
 
-### Import
+### Configuration
 
-1. Go to [vercel.com/new](https://vercel.com/new).
-2. Import the **same** GitHub repository: `Ayush-Raj178/photo-sharing-platform`.
-3. Set **Root Directory** to `frontend`.
-4. Vercel auto-detects the Vite framework.
-
-### Build Settings
-
-| Setting | Value |
-|---|---|
-| Framework | Vite |
-| Build Command | `npm run build` |
-| Output Directory | `dist` |
-
-### Environment Variables
-
-| Variable | Example |
-|---|---|
-| `VITE_API_BASE_URL` | `https://<backend-vercel-domain>/api/v1` |
+- **Root**: `frontend/`
+- **Framework**: Vite (auto-detected)
+- **Build Command**: `npm run build`
+- **Output Directory**: `dist`
 
 ### SPA Routing
 
-`frontend/vercel.json` contains a catch-all rewrite that sends all non-asset paths to `/index.html`:
+The frontend service has its own [`frontend/vercel.json`](../frontend/vercel.json) with a catch-all rewrite:
 
 ```json
 {
@@ -106,79 +86,134 @@ GET https://<backend-vercel-domain>/api/health
 }
 ```
 
-This supports direct navigation / browser refresh on all routes:
-- `/login`, `/register`
-- `/admin/*`, `/team/*`
-- `/gallery/:publicId`
+This ensures direct browser navigation and refresh work on all client-side routes (`/login`, `/register`, `/admin/*`, `/team/*`, `/gallery/:publicId`). Static assets (JS, CSS, images) in `dist/assets/` are served directly before the rewrite fires.
 
-Vercel serves static assets (JS, CSS, images) before the rewrite fires, so they are unaffected.
+### API Base URL
+
+Since both services share the same public origin, the frontend uses a same-origin relative base:
+
+```
+VITE_API_BASE_URL=/api/v1
+```
+
+No cross-origin requests in production. Local development falls back to `http://localhost:8080/api/v1` automatically when `VITE_API_BASE_URL` is not set.
 
 ---
 
-## Deployment Order
+## Backend Service
 
-Because the backend needs the frontend URL for CORS and the frontend needs the backend URL for API calls, follow this bootstrap sequence:
+### Configuration
 
-### Step 1 — Deploy Backend First
+- **Root**: `backend/`
+- **Runtime**: `container`
+- **Entrypoint**: `Dockerfile.vercel`
 
-Deploy the backend with temporary placeholder values:
+### Dockerfile Strategy
 
-```
-APP_ALLOWED_ORIGINS=http://localhost:5173
-FRONTEND_ORIGIN=http://localhost:5173
-```
-
-All other variables (`DB_*`, `CLOUDINARY_*`, `*JWT*`, etc.) set to real production values.
-
-Verify `GET /api/health` returns `{"status":"UP"}`.
-
-### Step 2 — Note Backend URL
-
-Copy the backend's Vercel URL, e.g. `https://photoshare-backend-xxx.vercel.app`.
-
-### Step 3 — Deploy Frontend
-
-Deploy the frontend with:
-
-```
-VITE_API_BASE_URL=https://photoshare-backend-xxx.vercel.app/api/v1
-```
-
-### Step 4 — Note Frontend URL
-
-Copy the frontend's Vercel URL, e.g. `https://photoshare-xxx.vercel.app`.
-
-### Step 5 — Update Backend CORS / Origin
-
-In the backend Vercel project, update:
-
-```
-APP_ALLOWED_ORIGINS=https://photoshare-xxx.vercel.app
-FRONTEND_ORIGIN=https://photoshare-xxx.vercel.app
-```
-
-### Step 6 — Redeploy Backend
-
-Trigger a redeployment of the backend project so the new environment variables take effect.
-
-### Step 7 — End-to-End Verification
-
-1. Open the frontend URL in a browser.
-2. Register / log in as Admin.
-3. Create a gallery, upload photos, publish.
-4. Open the generated public gallery link — it should use `FRONTEND_ORIGIN`, not `localhost`.
-5. Verify PIN access works.
-6. Confirm no CORS errors in the browser console.
+- [`backend/Dockerfile.vercel`](../backend/Dockerfile.vercel) is the Vercel-specific multi-stage build.
+- [`backend/Dockerfile`](../backend/Dockerfile) is preserved for other container hosts (Railway, Fly.io, etc.).
+- Builder stage: `maven:3.9.4-eclipse-temurin-17`, dependency caching via `pom.xml` copy-first, production JAR built with tests skipped.
+- Runtime stage: `eclipse-temurin:17-jre-alpine`, contains only the fat JAR.
+- Startup: `java -jar /app/photoshare-backend.jar`
+- PORT: read from `${PORT:8080}` in `application.yml`; Vercel injects `$PORT` automatically.
 
 ---
 
-## Gallery Link Behavior
+## Environment Variables (ONE Vercel Project)
 
-The backend uses `FRONTEND_ORIGIN` to construct the customer-facing gallery URL. In production, this must be the actual frontend Vercel URL (HTTPS). The backend URL is never exposed as the customer gallery link.
+All environment variables are set in a single Vercel project under **Settings → Environment Variables**.
+
+### Backend Variables (11 required)
+
+| # | Variable | Value / Notes | Secret? |
+|---|---|---|---|
+| 1 | `DB_JDBC_URL` | `jdbc:mysql://<aiven-host>:<port>/photoshare?sslMode=REQUIRED` | No |
+| 2 | `DB_USERNAME` | Aiven application user | Yes |
+| 3 | `DB_PASSWORD` | Aiven password | Yes |
+| 4 | `STAFF_JWT_SECRET_BASE64` | Base64 of ≥ 32 random bytes | Yes |
+| 5 | `GALLERY_JWT_SECRET_BASE64` | Different base64 signing key | Yes |
+| 6 | `STORAGE_DRIVER` | `cloudinary` | No |
+| 7 | `CLOUDINARY_CLOUD_NAME` | Your Cloudinary cloud name | No |
+| 8 | `CLOUDINARY_API_KEY` | Cloudinary API key | Yes |
+| 9 | `CLOUDINARY_API_SECRET` | Cloudinary API secret | Yes |
+| 10 | `APP_ALLOWED_ORIGINS` | `https://<project>.vercel.app` | No |
+| 11 | `FRONTEND_ORIGIN` | `https://<project>.vercel.app` | No |
+
+> **Note:** `APP_ALLOWED_ORIGINS` and `FRONTEND_ORIGIN` should be set to the project's public Vercel URL. Since both services share the same origin, this is straightforward — no circular bootstrap required. Set a temporary value on the first deploy, then update once you know the final URL.
+
+### Frontend Variables (1 required)
+
+| # | Variable | Value | Secret? |
+|---|---|---|---|
+| 1 | `VITE_API_BASE_URL` | `/api/v1` | No |
+
+---
+
+## Deployment Steps
+
+### Step 1 — Import Repository
+
+1. Go to [vercel.com/new](https://vercel.com/new)
+2. Import the GitHub repository: `Ayush-Raj178/photo-sharing-platform`
+3. Do NOT set a Root Directory — leave it at the repository root so Vercel discovers the root `vercel.json`
+4. Vercel detects the Services configuration automatically
+
+### Step 2 — Set Environment Variables
+
+In the Vercel project **Settings → Environment Variables**, add all variables from both tables above.
+
+For the first deployment, you can use a placeholder for `APP_ALLOWED_ORIGINS` and `FRONTEND_ORIGIN` (e.g., `https://placeholder.vercel.app`).
+
+Set `VITE_API_BASE_URL` to `/api/v1`.
+
+### Step 3 — Deploy
+
+Click **Deploy**. Vercel builds both services:
+- Frontend: runs `npm run build` in `frontend/`, outputs to `dist/`
+- Backend: builds Docker image from `backend/Dockerfile.vercel`
+
+### Step 4 — Verify Health
+
+```
+GET https://<project>.vercel.app/api/health
+→ {"status":"UP"}
+```
+
+### Step 5 — Update Origin Variables
+
+Once you know the final project URL:
+
+1. Update `APP_ALLOWED_ORIGINS` → `https://<project>.vercel.app`
+2. Update `FRONTEND_ORIGIN` → `https://<project>.vercel.app`
+3. Redeploy
+
+### Step 6 — End-to-End Verification
+
+1. Open `https://<project>.vercel.app` in a browser
+2. Register / log in as Admin
+3. Create a gallery, upload photos, publish
+4. Open the generated public gallery link — it should use the project URL
+5. Verify PIN access works
+6. Confirm no CORS errors in the browser console
+7. Test direct URL navigation: `/login`, `/gallery/<id>`, etc.
+
+---
 
 ## CORS
 
-`APP_ALLOWED_ORIGINS` accepts comma-separated exact origins. Wildcards are never used. Only the frontend Vercel URL should be listed in production.
+With Vercel Services, browser requests from the frontend to `/api/*` are same-origin — no CORS preflight is triggered.
+
+`APP_ALLOWED_ORIGINS` is still respected by the backend for safety. Set it to the project's public Vercel URL. Wildcards are never used.
+
+## Public Gallery URL
+
+The backend uses `FRONTEND_ORIGIN` to construct customer-facing gallery links. In production, this is the shared Vercel project URL:
+
+```
+https://<project>.vercel.app/gallery/<publicId>
+```
+
+The backend container's internal URL is never exposed to customers.
 
 ## Health Endpoint
 
@@ -192,50 +227,24 @@ It does not expose secrets, database state, or cloud provider details.
 
 ---
 
-## Environment Contract Summary
-
-### Backend (12 required variables)
-
-| # | Variable | Secret? |
-|---|---|---|
-| 1 | `PORT` | No |
-| 2 | `DB_JDBC_URL` | No |
-| 3 | `DB_USERNAME` | Yes |
-| 4 | `DB_PASSWORD` | Yes |
-| 5 | `STAFF_JWT_SECRET_BASE64` | Yes |
-| 6 | `GALLERY_JWT_SECRET_BASE64` | Yes |
-| 7 | `STORAGE_DRIVER` | No |
-| 8 | `CLOUDINARY_CLOUD_NAME` | No |
-| 9 | `CLOUDINARY_API_KEY` | Yes |
-| 10 | `CLOUDINARY_API_SECRET` | Yes |
-| 11 | `APP_ALLOWED_ORIGINS` | No |
-| 12 | `FRONTEND_ORIGIN` | No |
-
-### Frontend (1 required variable)
-
-| # | Variable | Secret? |
-|---|---|---|
-| 1 | `VITE_API_BASE_URL` | No |
-
----
-
 ## Production Build Reference
 
 | Component | Command |
 |---|---|
-| Backend build | `mvn -B -DskipTests package` |
-| Backend start | `java -jar target/photoshare-backend-0.0.1-SNAPSHOT.jar` |
+| Backend build | Dockerfile.vercel: `mvn -B -DskipTests package` |
+| Backend start | `java -jar /app/photoshare-backend.jar` |
 | Frontend build | `npm run build` |
 | Frontend output | `dist/` |
 
 ## Key Production Behaviors
 
-- **MySQL Migration**: Flyway V1 and V2 migrations run automatically on startup and apply to an empty production DB. Hibernate validates the schema post-migration.
-- **Cloudinary Storage**: Preserves authenticated delivery, backend-protected retrieval, and signed CDN read implementation. Does not expose secrets or signed URLs.
-- **Known Limitations**: On a free-tier hosting platform, cold-starts might delay the initial backend response.
+- **MySQL Migration**: Flyway V1 and V2 migrations run automatically on startup. Hibernate validates the schema post-migration.
+- **Cloudinary Storage**: Preserves authenticated delivery, backend-protected retrieval, and signed CDN read. Does not expose secrets.
+- **Same-Origin**: Frontend and backend share a domain — no CORS complexity.
+- **Known Limitations**: Cold-starts may delay the first backend response on free-tier.
 
 ## Operations and Rollback
 
-Persist uploaded originals independently of API restarts/releases. Back up MySQL and Cloudinary using compatible recovery points. Do not place dumps or customer photos in the repository.
+Persist uploaded originals independently of deployments. Back up MySQL and Cloudinary using compatible recovery points. Do not place dumps or customer photos in the repository.
 
-For a failed release, restore the previous compatible application build and follow reviewed migration rollback/forward-repair steps. Never drop/recreate production schema or delete the storage bucket to roll back. Keep migrations backward-compatible where practical and back up before risky changes.
+For a failed release, restore the previous deployment via Vercel's deployment history. Keep Flyway migrations backward-compatible and back up before risky changes.
