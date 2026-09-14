@@ -182,7 +182,7 @@ class CloudinaryPhotoStorageTest {
                 .run(context -> {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure()).hasRootCauseMessage(
-                            variableName + " must be configured when STORAGE_DRIVER=cloudinary");
+                            variableName + " must be configured when PHOTOSHARE_STORAGE_DRIVER=cloudinary");
                 });
     }
 

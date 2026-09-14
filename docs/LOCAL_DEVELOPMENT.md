@@ -19,7 +19,7 @@ Stop the old manually managed backend before starting its replacement. In the Po
 
 ```powershell
 Set-Location -LiteralPath 'C:\Users\AyushRaj\Desktop\photo-sharing-platform\backend'
-$env:STORAGE_DRIVER = 'cloudinary'
+$env:PHOTOSHARE_STORAGE_DRIVER = 'cloudinary'
 
 if ($env:DB_JDBC_URL -notmatch '^jdbc:mysql://(?:localhost|127\.0\.0\.1)(?::[0-9]+)?/[^?\s/]+(?:\?.*)?$') {
     throw 'Set DB_JDBC_URL to your existing local MySQL database URL before starting.'
@@ -30,7 +30,7 @@ mvn -B -ntp "-Dmaven.repo.local=C:\Users\AyushRaj\Desktop\photo-sharing-platform
 
 Run this command without the old `spring-boot.run.arguments` setting. Do not include `--spring.config.additional-location=file:./src/test/resources/application.yml`, `spring-boot:test-run`, or a test classpath. If you previously configured datasource/config overrides through `SPRING_DATASOURCE_*`, `SPRING_CONFIG_*`, `SPRING_APPLICATION_JSON`, or JVM arguments, remove those test overrides from the launching window as well. The command uses the normal `src/main/resources/application.yml` via Maven's compiled application resources.
 
-The default backend URL is `http://localhost:8080/api/v1`. Normal configuration maps `DB_JDBC_URL`, `DB_USERNAME`, and `DB_PASSWORD` into the datasource and maps `STORAGE_DRIVER` into `photoshare.storage.driver`. A missing/unreachable MySQL configuration must be corrected; do not add the H2 test classpath as a fallback.
+The default backend URL is `http://localhost:8080/api/v1`. Normal configuration maps `DB_JDBC_URL`, `DB_USERNAME`, and `DB_PASSWORD` into the datasource and maps `PHOTOSHARE_STORAGE_DRIVER` (or legacy `STORAGE_DRIVER`) into `photoshare.storage.driver`. A missing/unreachable MySQL configuration must be corrected; do not add the H2 test classpath as a fallback.
 
 Startup should report a `jdbc:mysql:` datasource and the intended schema, not `jdbc:h2:mem:photoshare`. Hibernate uses `ddl-auto: validate`; Flyway applies versioned migrations once and retains its history. There is no database reset or drop command in this procedure. If the existing schema conflicts with migration history, inspect the error without dropping data, cleaning Flyway, or blindly baselining the schema.
 

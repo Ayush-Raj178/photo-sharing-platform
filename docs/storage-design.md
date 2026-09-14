@@ -4,7 +4,7 @@ Status: the provider-neutral boundary, local adapter, and Cloudinary adapter are
 
 ## Storage boundary
 
-MySQL holds the seven SRD metadata examples plus validation/state fields; photo bytes live in private object/file storage. `STORAGE_DRIVER=cloudinary` selects Cloudinary authenticated assets for production-capable storage, while `STORAGE_DRIVER=local` keeps the API-only local adapter outside the webroot for development/tests. Production must not depend on ephemeral host disk.
+MySQL holds the seven SRD metadata examples plus validation/state fields; photo bytes live in private object/file storage. `PHOTOSHARE_STORAGE_DRIVER=cloudinary` selects Cloudinary authenticated assets for production-capable storage, while `PHOTOSHARE_STORAGE_DRIVER=local` keeps the API-only local adapter outside the webroot for development/tests. Production must not depend on ephemeral host disk.
 
 Use one storage interface for put, read, and delete. The backend mediates uploads and image reads. The Cloudinary adapter maps the generated storage key to a Cloudinary public ID plus validated format, records original filename/content type/file size through the existing metadata flow, uploads with delivery type `authenticated`, and downloads through a short-lived signed URL consumed only by the backend. Browser redirects/provider URLs, direct-to-storage uploads, public assets, thumbnails, resizing, and archive/bulk tooling are not in the baseline.
 

@@ -35,7 +35,7 @@ public class CloudinaryStorageConfiguration {
 
     private void require(String value, String variableName) {
         if (value == null || value.isBlank()) {
-            throw new IllegalStateException(variableName + " must be configured when STORAGE_DRIVER=cloudinary");
+            throw new IllegalStateException(variableName + " must be configured when PHOTOSHARE_STORAGE_DRIVER=cloudinary");
         }
     }
 }

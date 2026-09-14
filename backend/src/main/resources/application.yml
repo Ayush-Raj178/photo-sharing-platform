@@ -36,7 +36,7 @@ photoshare:
     staff-ttl-seconds: ${STAFF_JWT_TTL_SECONDS:900}
     gallery-ttl-seconds: ${GALLERY_GRANT_TTL_SECONDS:900}
   storage:
-    driver: ${STORAGE_DRIVER:local}
+    driver: ${PHOTOSHARE_STORAGE_DRIVER:${STORAGE_DRIVER:local}}
     local-root: ${LOCAL_STORAGE_ROOT:./local-storage}
     cloudinary:
       cloud-name: ${CLOUDINARY_CLOUD_NAME:}

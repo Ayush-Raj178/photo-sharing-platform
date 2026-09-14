@@ -132,7 +132,7 @@ All environment variables are set in a single Vercel project under **Settings â†
 | 3 | `DB_PASSWORD` | Aiven password | Yes |
 | 4 | `STAFF_JWT_SECRET_BASE64` | Base64 of â‰¥ 32 random bytes | Yes |
 | 5 | `GALLERY_JWT_SECRET_BASE64` | Different base64 signing key | Yes |
-| 6 | `STORAGE_DRIVER` | `cloudinary` | No |
+| 6 | `PHOTOSHARE_STORAGE_DRIVER` | `cloudinary` | No |
 | 7 | `CLOUDINARY_CLOUD_NAME` | Your Cloudinary cloud name | No |
 | 8 | `CLOUDINARY_API_KEY` | Cloudinary API key | Yes |
 | 9 | `CLOUDINARY_API_SECRET` | Cloudinary API secret | Yes |

@@ -43,7 +43,7 @@ The actual Maven source JARs and bytecode for `cloudinary-core:2.3.2` and `cloud
 Run in the external PowerShell session that already contains the real environment variables:
 
 ```powershell
-$env:STORAGE_DRIVER = 'cloudinary'
+$env:PHOTOSHARE_STORAGE_DRIVER = 'cloudinary'
 powershell -NoProfile -ExecutionPolicy Bypass -File 'C:\Users\AyushRaj\Desktop\photo-sharing-platform\backend\cloudinary-smoke.ps1'
 ```
 

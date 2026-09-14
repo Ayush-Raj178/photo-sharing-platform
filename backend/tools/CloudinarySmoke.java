@@ -43,7 +43,7 @@ public final class CloudinarySmoke {
         var storage = Binder.get(environment).bind("photoshare.storage",
                 Bindable.of(PhotoShareProperties.Storage.class)).orElseThrow(IllegalStateException::new);
         if (!"cloudinary".equals(storage.driver())) {
-            System.out.println("SMOKE result=FAIL reason=STORAGE_DRIVER_must_be_cloudinary");
+            System.out.println("SMOKE result=FAIL reason=PHOTOSHARE_STORAGE_DRIVER_must_be_cloudinary");
             return 1;
         }
         var credentials = storage.cloudinary();
