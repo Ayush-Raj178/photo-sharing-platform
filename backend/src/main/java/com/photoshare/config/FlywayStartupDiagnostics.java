@@ -51,17 +51,21 @@ class FlywayStartupDiagnostics {
             }
             log.info("Flyway diagnostic [tables={}]", tables);
 
+            logTableState(connection, tables);
+
             if (tables.stream().anyMatch("flyway_schema_history"::equalsIgnoreCase)) {
                 try (Statement statement = connection.createStatement();
                      ResultSet result = statement.executeQuery(
-                             "SELECT installed_rank, version, description, type, script, checksum, success "
+                             "SELECT installed_rank, version, description, type, script, checksum, "
+                                     + "installed_on, execution_time, success "
                                      + "FROM flyway_schema_history ORDER BY installed_rank")) {
                     while (result.next()) {
                         log.info("Flyway diagnostic history [rank={}, version={}, description={}, type={}, "
-                                        + "script={}, checksum={}, success={}]",
+                                        + "script={}, checksum={}, installedOn={}, executionTimeMs={}, success={}]",
                                 result.getInt("installed_rank"), result.getString("version"),
                                 result.getString("description"), result.getString("type"),
                                 result.getString("script"), result.getObject("checksum"),
+                                result.getTimestamp("installed_on"), result.getInt("execution_time"),
                                 result.getBoolean("success"));
                     }
                 }
@@ -69,6 +73,42 @@ class FlywayStartupDiagnostics {
         } catch (SQLException exception) {
             log.warn("Flyway diagnostic query failed [sqlState={}, errorCode={}, message={}]",
                     exception.getSQLState(), exception.getErrorCode(), exception.getMessage());
+        }
+    }
+
+    private void logTableState(Connection connection, List<String> tables) throws SQLException {
+        List<String> expectedTables = List.of(
+                "users", "events", "event_members", "photos", "galleries", "gallery_photos");
+        for (String table : expectedTables) {
+            if (tables.stream().noneMatch(table::equalsIgnoreCase)) {
+                log.info("Flyway diagnostic table [name={}, present=false]", table);
+                continue;
+            }
+
+            try (Statement statement = connection.createStatement();
+                 ResultSet result = statement.executeQuery(
+                         "SELECT COUNT(*) FROM `" + table + "`")) {
+                result.next();
+                log.info("Flyway diagnostic table [name={}, present=true, rowCount={}]",
+                        table, result.getLong(1));
+            }
+
+            try (Statement statement = connection.createStatement();
+                 ResultSet result = statement.executeQuery("SHOW CREATE TABLE `" + table + "`")) {
+                result.next();
+                log.info("Flyway diagnostic definition [name={}, ddl={}]", table, result.getString(2));
+            }
+        }
+
+        try (Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery(
+                     "SELECT TABLE_NAME, ENGINE, CREATE_TIME FROM information_schema.TABLES "
+                             + "WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME")) {
+            while (result.next()) {
+                log.info("Flyway diagnostic table metadata [name={}, engine={}, createdAt={}]",
+                        result.getString("TABLE_NAME"), result.getString("ENGINE"),
+                        result.getTimestamp("CREATE_TIME"));
+            }
         }
     }
 
