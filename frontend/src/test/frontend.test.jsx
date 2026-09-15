@@ -233,7 +233,91 @@ describe('critical frontend boundaries', () => {
     get.mockRestore()
   })
 
-  it('retries protected image automatically before showing error', async () => {
-    expect(true).toBe(true)
+  it('validates file sizes and counts correctly', () => {
+    const valid = new File(['x'], 'valid.jpg', { type: 'image/jpeg' })
+    Object.defineProperty(valid, 'size', { value: 1024 * 1024 })
+    const tooBig = new File(['y'], 'big.jpg', { type: 'image/jpeg' })
+    Object.defineProperty(tooBig, 'size', { value: 5 * 1024 * 1024 })
+    const wrongType = new File(['z'], 'wrong.txt', { type: 'text/plain' })
+
+    const result = validateFiles([valid, tooBig, wrongType])
+    expect(result.accepted).toHaveLength(1)
+    expect(result.accepted[0].file).toBe(valid)
+    expect(result.error).toContain('big.jpg: larger than 4 MB')
+    expect(result.error).toContain('wrong.txt: use JPEG or PNG')
+
+    const manyFiles = Array.from({ length: 21 }, () => valid)
+    expect(validateFiles(manyFiles).error).toBe('Choose at most 20 photos at once.')
+  })
+
+  it('batches uploads sequentially to respect 4MB limits and isolates failures', async () => {
+    const get = vi.spyOn(api, 'get').mockImplementation((url) => {
+      if (url === '/events/1') return Promise.resolve({ data: { id: '1', name: 'Event' } })
+      if (url === '/events/1/photos') return Promise.resolve({ data: { items: [], page: 0, pageSize: 24, totalItems: 0, totalPages: 0, hasNext: false } })
+      return Promise.reject(new Error(`Unexpected URL ${url}`))
+    })
+    
+    // Create 3 files: two 3MB files and one 1MB file.
+    // Batching limit is 4MB raw. 
+    // File 1 (3MB) -> Batch 1
+    // File 2 (3MB) -> Batch 2
+    // File 3 (1MB) -> Batch 2 (Wait, 3MB + 1MB = 4MB <= 4MB, so File 2 + 3 go to Batch 2).
+    const f1 = new File(['a'], 'f1.jpg', { type: 'image/jpeg' }); Object.defineProperty(f1, 'size', { value: 3 * 1024 * 1024 })
+    const f2 = new File(['b'], 'f2.jpg', { type: 'image/jpeg' }); Object.defineProperty(f2, 'size', { value: 3 * 1024 * 1024 })
+    const f3 = new File(['c'], 'f3.jpg', { type: 'image/jpeg' }); Object.defineProperty(f3, 'size', { value: 1 * 1024 * 1024 })
+    
+    let postCallCount = 0
+    const post = vi.spyOn(api, 'post').mockImplementation((url, formData) => {
+      postCallCount++
+      const files = formData.getAll('files')
+      if (postCallCount === 1) {
+        expect(files).toHaveLength(1)
+        expect(files[0].name).toBe('f1.jpg')
+        return Promise.reject(new Error('Network error on batch 1'))
+      } else {
+        expect(files).toHaveLength(2)
+        expect(files[0].name).toBe('f2.jpg')
+        expect(files[1].name).toBe('f3.jpg')
+        return Promise.resolve({ data: { results: [{ status: 'UPLOADED' }, { status: 'FAILED', error: { message: 'Individual fail' } }] } })
+      }
+    })
+
+    const { TeamEventPage } = await import('../pages/TeamEventPage')
+    
+    const { container } = render(
+      <AuthContext.Provider value={{ token: 'token', user: { role: 'TEAM_MEMBER' } }}>
+        <MemoryRouter initialEntries={['/team/events/1']}>
+          <Routes><Route path="/team/events/:eventId" element={<TeamEventPage />} /></Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>
+    )
+
+    await waitFor(() => expect(screen.queryByText('Loading your uploads…')).not.toBeInTheDocument())
+    
+    const input = container.querySelector('#photo-files')
+    await userEvent.upload(input, [f1, f2, f3])
+    
+    await userEvent.click(screen.getByRole('button', { name: 'Upload 3 photos' }))
+    
+    // Batch 1 fails, Batch 2 partially succeeds.
+    // So f1 fails (network), f2 succeeds, f3 fails (individual).
+    await waitFor(() => expect(screen.getByText(/1 uploaded; 2 failed/)).toBeInTheDocument())
+    
+    // Check retry uses the same batching (it retries the 2 failed files: f1 and f3)
+    // f1 (3MB) + f3 (1MB) = 4MB -> Should fit in a single batch!
+    post.mockImplementation((url, formData) => {
+      const files = formData.getAll('files')
+      expect(files).toHaveLength(2)
+      expect(files[0].name).toBe('f1.jpg')
+      expect(files[1].name).toBe('f3.jpg')
+      return Promise.resolve({ data: { results: [{ status: 'UPLOADED' }, { status: 'UPLOADED' }] } })
+    })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Retry 2 failed' }))
+    
+    await waitFor(() => expect(screen.getByText(/2 photos uploaded successfully/)).toBeInTheDocument())
+
+    get.mockRestore()
+    post.mockRestore()
   })
 })
