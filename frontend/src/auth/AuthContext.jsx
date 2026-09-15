@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { api, configureStaffSession, getApiError } from '../lib/api'
+import { api, configureStaffSession, getApiError, isTransientError } from '../lib/api'
 
 export const AuthContext = createContext(null)
 const STAFF_SESSION_KEY = 'photoshare.staffSession'
@@ -49,17 +49,30 @@ export function AuthProvider({ children }) {
       return undefined
     }
     let active = true
-    api.get('/auth/me')
-      .then(({ data }) => {
-        if (!active) return
-        const restored = { ...session, user: data }
-        storeSession(restored)
-        setSession(restored)
-      })
-      .catch(() => {
-        if (active) logout('Your saved session is no longer valid. Please sign in again.')
-      })
-      .finally(() => { if (active) setRestoring(false) })
+
+    function tryRestore(retried) {
+      api.get('/auth/me')
+        .then(({ data }) => {
+          if (!active) return
+          const restored = { ...session, user: data }
+          storeSession(restored)
+          setSession(restored)
+        })
+        .catch((error) => {
+          if (!active) return
+          // Retry once on transient network/timeout errors (cold start)
+          if (!retried && isTransientError(error)) {
+            tryRestore(true)
+            return
+          }
+          // Only log out on confirmed 401 or after retry exhaustion
+          logout(error?.response?.status === 401
+            ? 'Your saved session is no longer valid. Please sign in again.'
+            : 'Unable to verify your session. Please sign in again.')
+        })
+        .finally(() => { if (active) setRestoring(false) })
+    }
+    tryRestore(false)
     return () => { active = false }
   }, [])
 

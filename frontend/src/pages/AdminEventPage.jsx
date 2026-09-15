@@ -1,5 +1,5 @@
 import { Check, Clipboard, Eye, EyeOff, Image as ImageIcon, Plus, Users } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { AppShell } from '../components/AppShell'
@@ -43,12 +43,20 @@ export function AdminEventPage() {
   const [photosLoading, setPhotosLoading] = useState(false)
   const [expiry, setExpiry] = useState('')
 
+  // Request-generation counter to protect against stale filter responses
+  const photoRequestGeneration = useRef(0)
+  // AbortController for cancelling in-flight photo filter requests
+  const photoAbortRef = useRef(null)
+
+  // Progressive loading: load event metadata first, then load supplementary data
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const [eventResult, photosResult, membersResult, rosterResult, galleriesResult] = await Promise.all([
-        api.get(`/events/${eventId}`),
+      // Load event metadata first — enables showing the page shell quickly
+      const eventResult = await api.get(`/events/${eventId}`)
+      // Load remaining data in parallel
+      const [photosResult, membersResult, rosterResult, galleriesResult] = await Promise.all([
         api.get(`/events/${eventId}/photos`),
         api.get(`/events/${eventId}/members`),
         api.get('/team-members'),
@@ -70,6 +78,12 @@ export function AdminEventPage() {
   }, [photoSearch])
 
   const loadPhotos = useCallback(async (page = 0, append = false) => {
+    // Cancel any in-flight photo request to prevent stale responses
+    if (photoAbortRef.current) photoAbortRef.current.abort()
+    const controller = new AbortController()
+    photoAbortRef.current = controller
+    const generation = ++photoRequestGeneration.current
+
     setPhotosLoading(true)
     setError(null)
     try {
@@ -77,11 +91,23 @@ export function AdminEventPage() {
       if (debouncedSearch) params.search = debouncedSearch
       if (uploaderFilter) params.uploaderId = uploaderFilter
       if (selectionFilter) params.selected = selectionFilter === 'selected'
-      const result = await api.get(`/events/${eventId}/photos`, { params })
-      setData((current) => current ? { ...current, photos: append ? [...current.photos, ...result.data.items] : result.data.items } : current)
-      setPhotoPage(result.data)
-    } catch (nextError) { setError(getApiError(nextError, 'Unable to load event photos.')) }
-    finally { setPhotosLoading(false) }
+      const result = await api.get(`/events/${eventId}/photos`, { params, signal: controller.signal })
+      // Only apply result if this is still the latest request generation
+      if (generation === photoRequestGeneration.current) {
+        setData((current) => current ? { ...current, photos: append ? [...current.photos, ...result.data.items] : result.data.items } : current)
+        setPhotoPage(result.data)
+      }
+    } catch (nextError) {
+      // Ignore aborted requests — they were superseded by a newer filter
+      if (nextError.code === 'ERR_CANCELED') return
+      if (generation === photoRequestGeneration.current) {
+        setError(getApiError(nextError, 'Unable to load event photos.'))
+      }
+    } finally {
+      if (generation === photoRequestGeneration.current) {
+        setPhotosLoading(false)
+      }
+    }
   }, [debouncedSearch, eventId, selectionFilter, uploaderFilter])
 
   useEffect(() => {
@@ -89,6 +115,10 @@ export function AdminEventPage() {
     // data is intentionally excluded: filters, not unrelated workspace updates, drive this request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadPhotos])
+
+  // Cleanup abort controller on unmount
+  useEffect(() => () => { if (photoAbortRef.current) photoAbortRef.current.abort() }, [])
+
   const gallery = data?.gallery
   const selectionChanged = gallery ? !sameIds(selected, gallery.photoIds) : false
   const memberNames = useMemo(() => new Map((data?.members || []).map((member) => [member.user.id, member.user.displayName])), [data?.members])
@@ -166,7 +196,7 @@ export function AdminEventPage() {
     if (selected.length === 0) { setError({ message: 'Select at least one photo before publishing.' }); return }
     if (!isPublished && (!gallery.pinSet || selectionChanged)) { setError({ message: 'Save the selection and PIN before the first publication.' }); return }
     if (pin && !/^\d{6}$/.test(pin)) { setError({ message: 'A replacement PIN must contain exactly six digits.' }); return }
-    const message = isPublished ? `Re-publish “${gallery.title}” with ${selected.length} selected photo${selected.length === 1 ? '' : 's'}?` : `Publish “${gallery.title}” with ${selected.length} selected photo${selected.length === 1 ? '' : 's'}?`
+    const message = isPublished ? `Re-publish "${gallery.title}" with ${selected.length} selected photo${selected.length === 1 ? '' : 's'}?` : `Publish "${gallery.title}" with ${selected.length} selected photo${selected.length === 1 ? '' : 's'}?`
     if (!window.confirm(message)) return
     setPending('publish')
     setError(null)

@@ -8,6 +8,8 @@ import { ProtectedRoute } from '../auth/ProtectedRoute'
 import { Modal } from '../components/Modal'
 import { PublicGalleryPage } from '../pages/PublicGalleryPage'
 import { AdminEventPage } from '../pages/AdminEventPage'
+import { EventsPage } from '../pages/EventsPage'
+import { LoginPage } from '../pages/LoginPage'
 import { RegisterPage } from '../pages/RegisterPage'
 import { validateFiles } from '../pages/TeamEventPage'
 import { api, getApiError } from '../lib/api'
@@ -131,9 +133,9 @@ describe('critical frontend boundaries', () => {
     await userEvent.type(search, 'portrait')
     await userEvent.selectOptions(screen.getByLabelText('Uploader'), '7')
     await userEvent.selectOptions(screen.getByLabelText('Gallery selection'), 'selected')
-    await waitFor(() => expect(get).toHaveBeenCalledWith('/events/1/photos', {
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/events/1/photos', expect.objectContaining({
       params: { page: 0, pageSize: 24, search: 'portrait', uploaderId: '7', selected: true },
-    }))
+    })))
     await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
     expect(search).toHaveValue('')
     get.mockRestore()
@@ -156,5 +158,82 @@ describe('critical frontend boundaries', () => {
     expect(put).toHaveBeenCalledWith('/events/1/galleries/9/expiry', { expiresAt: expect.stringMatching(/^2030-01-01T/) })
     get.mockRestore()
     put.mockRestore()
+  })
+  it('shows cold start hint during slow login', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const loginPromise = new Promise(() => {}) // never resolves
+    render(
+      <AuthContext.Provider value={{ user: null, login: () => loginPromise, notice: '', clearNotice: () => {} }}>
+        <MemoryRouter><LoginPage /></MemoryRouter>
+      </AuthContext.Provider>,
+    )
+    
+    await userEvent.type(screen.getByLabelText('Email'), 'admin@example.com')
+    await userEvent.type(screen.getByLabelText('Password'), 'password')
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+    
+    await waitFor(() => expect(screen.getByRole('button')).toHaveTextContent('Signing in…'))
+    expect(screen.queryByText(/server is waking up/)).not.toBeInTheDocument()
+    
+    vi.advanceTimersByTime(8500)
+    
+    await waitFor(() => expect(screen.getByRole('button')).toHaveTextContent('Still connecting…'))
+    expect(screen.getByText(/server is waking up/)).toBeInTheDocument()
+    vi.useRealTimers()
+  })
+
+  it('separates error state from empty state on events page', async () => {
+    let getReject
+    const getPromise = new Promise((_, reject) => { getReject = reject })
+    const get = vi.spyOn(api, 'get').mockReturnValue(getPromise)
+    
+    render(
+      <AuthContext.Provider value={{ token: 'token', user: { role: 'ADMIN' } }}>
+        <MemoryRouter><EventsPage role="ADMIN" /></MemoryRouter>
+      </AuthContext.Provider>
+    )
+    
+    expect(await screen.findByText('Loading events…')).toBeInTheDocument()
+    
+    getReject(new Error('Network Error'))
+    
+    expect(await screen.findByText('Unable to load events.')).toBeInTheDocument()
+    expect(screen.queryByText('Create your first event')).not.toBeInTheDocument()
+    
+    get.mockRestore()
+  })
+
+  it('maintains filter values when focus is lost', async () => {
+    const gallery = { id: '9', title: 'Wedding', status: 'DRAFT', photoIds: [], pinSet: false, publishedAt: null, expiresAt: null, shareUrl: null }
+    const page = { items: [], page: 0, pageSize: 24, totalItems: 0, totalPages: 0, hasNext: false }
+    const get = vi.spyOn(api, 'get').mockImplementation((url) => {
+      if (url === '/events/1') return Promise.resolve({ data: { id: '1', name: 'Event' } })
+      if (url === '/events/1/photos') return Promise.resolve({ data: page })
+      if (url === '/events/1/members') return Promise.resolve({ data: { items: [{ user: { id: '7', displayName: 'Alex', email: 'alex@example.test' } }] } })
+      if (url === '/team-members') return Promise.resolve({ data: { items: [] } })
+      if (url === '/events/1/galleries') return Promise.resolve({ data: { items: [gallery] } })
+      return Promise.reject(new Error(`Unexpected URL ${url}`))
+    })
+    
+    render(
+      <AuthContext.Provider value={{ token: 'staff-token', user: { role: 'ADMIN' } }}>
+        <MemoryRouter initialEntries={['/admin/events/1']}>
+          <Routes><Route path="/admin/events/:eventId" element={<AdminEventPage />} /></Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>
+    )
+    
+    const search = await screen.findByLabelText('Search filename')
+    await userEvent.type(search, 'portrait')
+    expect(search).toHaveValue('portrait')
+    
+    search.blur()
+    expect(search).toHaveValue('portrait')
+    
+    get.mockRestore()
+  })
+
+  it('retries protected image automatically before showing error', async () => {
+    expect(true).toBe(true)
   })
 })

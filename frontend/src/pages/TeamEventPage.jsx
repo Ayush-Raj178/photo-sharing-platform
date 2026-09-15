@@ -44,8 +44,9 @@ export function TeamEventPage() {
     setLoading(true)
     setError(null)
     try {
-      const [eventResult, photoResult] = await Promise.all([api.get(`/events/${eventId}`), api.get(`/events/${eventId}/photos`)])
+      const eventResult = await api.get(`/events/${eventId}`)
       setEvent(eventResult.data)
+      const photoResult = await api.get(`/events/${eventId}/photos`)
       setPhotos(photoResult.data.items)
       setPhotoPage(photoResult.data)
     } catch (nextError) { setError(getApiError(nextError, 'This assigned event is unavailable.')) }
