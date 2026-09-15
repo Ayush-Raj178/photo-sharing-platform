@@ -40,35 +40,61 @@ export function TeamEventPage() {
   const [photoPage, setPhotoPage] = useState({ page: 0, pageSize: 24, totalItems: 0, totalPages: 0, hasNext: false })
   const [photosLoading, setPhotosLoading] = useState(false)
 
+  const [photosError, setPhotosError] = useState(null)
+  const [slowLoad, setSlowLoad] = useState(false)
+
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
+    setPhotosError(null)
+    const slowTimer = window.setTimeout(() => setSlowLoad(true), 8000)
+
     try {
-      const eventResult = await api.get(`/events/${eventId}`)
-      setEvent(eventResult.data)
-      const photoResult = await api.get(`/events/${eventId}/photos`)
-      setPhotos(photoResult.data.items)
-      setPhotoPage(photoResult.data)
-    } catch (nextError) { setError(getApiError(nextError, 'This assigned event is unavailable.')) }
-    finally { setLoading(false) }
+      let eventData
+      try {
+        const eventResult = await api.get(`/events/${eventId}`)
+        eventData = eventResult.data
+        setEvent(eventData)
+      } catch (nextError) {
+        setError(getApiError(nextError, 'This assigned event is unavailable.'))
+        return
+      }
+
+      try {
+        const photoResult = await api.get(`/events/${eventId}/photos`)
+        setPhotos(photoResult.data.items)
+        setPhotoPage(photoResult.data)
+      } catch (nextError) {
+        setPhotosError(getApiError(nextError, 'Unable to load photos.'))
+      }
+    } finally {
+      window.clearTimeout(slowTimer)
+      setSlowLoad(false)
+      setLoading(false)
+    }
   }, [eventId])
   useEffect(() => { load() }, [load])
 
   async function loadMorePhotos() {
     setPhotosLoading(true)
-    setError(null)
+    setPhotosError(null)
     try {
       const result = await api.get(`/events/${eventId}/photos`, { params: { page: photoPage.page + 1, pageSize: 24 } })
       setPhotos((current) => [...current, ...result.data.items])
       setPhotoPage(result.data)
-    } catch (nextError) { setError(getApiError(nextError, 'Unable to load more photos.')) }
+    } catch (nextError) { setPhotosError(getApiError(nextError, 'Unable to load more photos.')) }
     finally { setPhotosLoading(false) }
   }
 
   async function refreshPhotos() {
-    const result = await api.get(`/events/${eventId}/photos`)
-    setPhotos(result.data.items)
-    setPhotoPage(result.data)
+    setPhotosError(null)
+    try {
+      const result = await api.get(`/events/${eventId}/photos`)
+      setPhotos(result.data.items)
+      setPhotoPage(result.data)
+    } catch (nextError) {
+      setPhotosError(getApiError(nextError, 'Unable to refresh photos.'))
+    }
   }
 
   function addFiles(list) {
@@ -153,7 +179,7 @@ export function TeamEventPage() {
   const retryable = queue.filter((item) => item.status === 'Failed').length
   const pendingCount = queue.filter((item) => item.status === 'Queued' || item.status === 'Failed').length
 
-  if (loading) return <AppShell role="TEAM_MEMBER"><LoadingState label="Loading your uploads…" /></AppShell>
+  if (loading && !event) return <AppShell role="TEAM_MEMBER"><LoadingState label={slowLoad ? "Preparing server…" : "Loading your uploads…"} /></AppShell>
   if (!event) return <AppShell role="TEAM_MEMBER"><PageHeader title="Event unavailable" /><ErrorMessage error={error} onRetry={load} /></AppShell>
 
   return (
@@ -168,7 +194,7 @@ export function TeamEventPage() {
         <small>JPEG or PNG · up to 4 MB each · 20 files</small>
       </section>
       {queue.length ? <section aria-labelledby="queue-title"><div className="queue-header"><h2 className="section-title" id="queue-title">Upload queue ({queue.length})</h2><button className="button button-primary" onClick={upload} disabled={uploading || !pendingCount}>{uploading ? 'Uploading…' : retryable && pendingCount === retryable ? `Retry ${retryable} failed` : `Upload ${pendingCount} photo${pendingCount === 1 ? '' : 's'}`}</button></div><div className="queue-list">{queue.map((item) => <div className="queue-row" key={item.id}><span className="queue-name" title={item.file.name}>{item.file.name}</span><span className="queue-muted">{formatBytes(item.file.size)}</span><div className="progress-cell"><div className="progress-track"><div className="progress-bar" style={{ width: `${item.progress}%` }} /></div></div><span className={`queue-status ${item.status === 'Failed' ? 'status-failed' : item.status === 'Succeeded' ? 'status-success' : ''}`}>{item.status === 'Succeeded' ? <CheckCircle2 size={16} /> : item.status === 'Failed' ? <XCircle size={16} /> : item.status === 'Uploading' ? <RotateCw className="spin" size={16} /> : null}{item.status}{item.error ? <span className="sr-only">: {item.error}</span> : null}</span><button className="icon-button" aria-label={`Remove ${item.file.name}`} disabled={uploading} onClick={() => setQueue((items) => items.filter((candidate) => candidate.id !== item.id))}><X size={17} /></button>{item.error ? <small className="status-failed" style={{ gridColumn: '1 / -1', paddingBottom: 8 }}>{item.error}</small> : null}</div>)}</div></section> : null}
-      <section aria-labelledby="own-photos-title"><div className="section-heading-row"><h2 className="section-title" id="own-photos-title">Your photos ({photoPage.totalItems})</h2><span className="photo-note">Only photographs you uploaded for this event.</span></div>{photos.length === 0 ? <EmptyState icon={ImageIcon} title="No uploaded photos yet" description="Choose JPEG or PNG files above to add your first event photographs." /> : <><div className="photo-grid">{photos.map((photo) => <article className="photo-item" key={photo.id}><div className="photo-frame"><ProtectedImage path={photo.contentPath} token={token} alt={photo.filename} /></div><div className="photo-meta"><strong title={photo.filename}>{photo.filename}</strong><small>{formatBytes(photo.fileSizeBytes)}</small></div></article>)}</div>{photoPage.hasNext ? <div className="load-more"><button className="button button-secondary" onClick={loadMorePhotos} disabled={photosLoading}>{photosLoading ? 'Loading…' : 'Load more photos'}</button></div> : null}</>}</section>
+      <section aria-labelledby="own-photos-title"><div className="section-heading-row"><h2 className="section-title" id="own-photos-title">Your photos ({photoPage.totalItems})</h2><span className="photo-note">Only photographs you uploaded for this event.</span></div>{photosError ? <ErrorMessage error={photosError} onRetry={refreshPhotos} /> : null}{photos.length === 0 && !photosError ? <EmptyState icon={ImageIcon} title="No uploaded photos yet" description="Choose JPEG or PNG files above to add your first event photographs." /> : <><div className="photo-grid">{photos.map((photo) => <article className="photo-item" key={photo.id}><div className="photo-frame"><ProtectedImage path={photo.contentPath} token={token} alt={photo.filename} /></div><div className="photo-meta"><strong title={photo.filename}>{photo.filename}</strong><small>{formatBytes(photo.fileSizeBytes)}</small></div></article>)}</div>{photoPage.hasNext ? <div className="load-more"><button className="button button-secondary" onClick={loadMorePhotos} disabled={photosLoading}>{photosLoading ? 'Loading…' : 'Load more photos'}</button></div> : null}</>}</section>
     </AppShell>
   )
 }

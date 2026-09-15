@@ -320,4 +320,71 @@ describe('critical frontend boundaries', () => {
     get.mockRestore()
     post.mockRestore()
   })
+
+  it('event shell survives photos API failure', async () => {
+    const get = vi.spyOn(api, 'get').mockImplementation((url) => {
+      if (url === '/events/1') return Promise.resolve({ data: { id: '1', name: 'Event' } })
+      if (url === '/events/1/photos') return Promise.reject({ response: { status: 500 } })
+      if (url === '/events/1/members') return Promise.resolve({ data: { items: [] } })
+      if (url === '/team-members') return Promise.resolve({ data: { items: [] } })
+      if (url === '/events/1/galleries') return Promise.resolve({ data: { items: [] } })
+      return Promise.reject(new Error(`Unexpected URL ${url}`))
+    })
+
+    const { AdminEventPage } = await import('../pages/AdminEventPage')
+
+    render(
+      <AuthContext.Provider value={{ token: 'token', user: { role: 'ADMIN' } }}>
+        <MemoryRouter initialEntries={['/admin/events/1']}>
+          <Routes><Route path="/admin/events/:eventId" element={<AdminEventPage />} /></Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>
+    )
+
+    // Shell should render
+    expect(await screen.findByRole('heading', { name: 'Event' })).toBeInTheDocument()
+    // Photos section should show error
+    expect(await screen.findByText('Unable to load event photos.')).toBeInTheDocument()
+    // Page level error should not be there
+    expect(screen.queryByText('Event unavailable')).not.toBeInTheDocument()
+
+    get.mockRestore()
+  })
+
+  it('ProtectedImage does not retry 401 and respects IntersectionObserver', async () => {
+    const axios = (await import('axios')).default
+    const viFetch = vi.spyOn(axios, 'get').mockRejectedValue({ response: { status: 401 } })
+    
+    // Simulate window.IntersectionObserver
+    let intersectCb
+    window.IntersectionObserver = class {
+      constructor(cb) {
+        intersectCb = cb
+      }
+      observe() {}
+      disconnect() {}
+    }
+
+    const { ProtectedImage } = await import('../components/ProtectedImage')
+    const onError = vi.fn()
+    render(<ProtectedImage path="/test.jpg" token="tok" onError={onError} />)
+
+    // Should not fetch yet because it's not intersecting
+    expect(viFetch).not.toHaveBeenCalled()
+
+    // Trigger intersection
+    intersectCb([{ isIntersecting: true }])
+
+    // Wait for the fetch and error handler
+    await waitFor(() => expect(onError).toHaveBeenCalled())
+    
+    // 401 should NOT trigger a retry, so fetch should be called exactly once
+    // wait, fetchProtectedImage queues it, so we need to wait a moment.
+    await waitFor(() => expect(viFetch).toHaveBeenCalledTimes(1))
+    await new Promise(r => setTimeout(r, 100))
+    expect(viFetch).toHaveBeenCalledTimes(1)
+
+    viFetch.mockRestore()
+    delete window.IntersectionObserver
+  })
 })

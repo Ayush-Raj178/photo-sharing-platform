@@ -29,6 +29,10 @@ export function AdminEventPage() {
   const [showPin, setShowPin] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [photosError, setPhotosError] = useState(null)
+  const [membersError, setMembersError] = useState(null)
+  const [galleriesError, setGalleriesError] = useState(null)
+  const [slowLoad, setSlowLoad] = useState(false)
   const [success, setSuccess] = useState('')
   const [pending, setPending] = useState('')
   const [memberModal, setMemberModal] = useState(false)
@@ -52,23 +56,60 @@ export function AdminEventPage() {
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
+    setPhotosError(null)
+    setMembersError(null)
+    setGalleriesError(null)
+    
+    const slowTimer = window.setTimeout(() => setSlowLoad(true), 8000)
+
     try {
-      // Load event metadata first — enables showing the page shell quickly
-      const eventResult = await api.get(`/events/${eventId}`)
-      // Load remaining data in parallel
-      const [photosResult, membersResult, rosterResult, galleriesResult] = await Promise.all([
+      let eventData
+      try {
+        const eventResult = await api.get(`/events/${eventId}`)
+        eventData = eventResult.data
+        setData((current) => current ? { ...current, event: eventData } : { event: eventData, photos: [], members: [], roster: [], gallery: null })
+      } catch (nextError) {
+        setError(getApiError(nextError, 'This event workspace is unavailable.'))
+        return
+      }
+
+      const results = await Promise.allSettled([
         api.get(`/events/${eventId}/photos`),
         api.get(`/events/${eventId}/members`),
         api.get('/team-members'),
         api.get(`/events/${eventId}/galleries`),
       ])
-      const gallery = galleriesResult.data.items[0] || null
-      setData({ event: eventResult.data, photos: photosResult.data.items, members: membersResult.data.items, roster: rosterResult.data.items, gallery })
-      setPhotoPage(photosResult.data)
-      setSelected(gallery?.photoIds || [])
-      setExpiry(toLocalDateTime(gallery?.expiresAt))
-    } catch (nextError) { setError(getApiError(nextError, 'This event workspace is unavailable.')) }
-    finally { setLoading(false) }
+
+      const [photosRes, membersRes, rosterRes, galleriesRes] = results
+
+      if (photosRes.status === 'fulfilled') {
+        setPhotoPage(photosRes.value.data)
+      } else {
+        setPhotosError(getApiError(photosRes.reason, 'Unable to load event photos.'))
+      }
+
+      if (membersRes.status === 'rejected') setMembersError(getApiError(membersRes.reason, 'Unable to load members.'))
+      if (galleriesRes.status === 'rejected') setGalleriesError(getApiError(galleriesRes.reason, 'Unable to load gallery.'))
+
+      setData((current) => {
+        const nextGallery = galleriesRes.status === 'fulfilled' ? (galleriesRes.value.data.items[0] || null) : current?.gallery
+        if (galleriesRes.status === 'fulfilled') {
+          setSelected(nextGallery?.photoIds || [])
+          setExpiry(toLocalDateTime(nextGallery?.expiresAt))
+        }
+        return {
+          event: eventData,
+          photos: photosRes.status === 'fulfilled' ? photosRes.value.data.items : (current?.photos || []),
+          members: membersRes.status === 'fulfilled' ? membersRes.value.data.items : (current?.members || []),
+          roster: rosterRes.status === 'fulfilled' ? rosterRes.value.data.items : (current?.roster || []),
+          gallery: nextGallery
+        }
+      })
+    } finally {
+      window.clearTimeout(slowTimer)
+      setSlowLoad(false)
+      setLoading(false)
+    }
   }, [eventId])
 
   useEffect(() => { load() }, [load])
@@ -85,7 +126,7 @@ export function AdminEventPage() {
     const generation = ++photoRequestGeneration.current
 
     setPhotosLoading(true)
-    setError(null)
+    setPhotosError(null)
     try {
       const params = { page, pageSize: 24 }
       if (debouncedSearch) params.search = debouncedSearch
@@ -101,7 +142,7 @@ export function AdminEventPage() {
       // Ignore aborted requests — they were superseded by a newer filter
       if (nextError.code === 'ERR_CANCELED') return
       if (generation === photoRequestGeneration.current) {
-        setError(getApiError(nextError, 'Unable to load event photos.'))
+        setPhotosError(getApiError(nextError, 'Unable to load event photos.'))
       }
     } finally {
       if (generation === photoRequestGeneration.current) {
@@ -233,7 +274,7 @@ export function AdminEventPage() {
     finally { setPending('') }
   }
 
-  if (loading) return <AppShell role="ADMIN"><LoadingState label="Loading event workspace…" /></AppShell>
+  if (loading && !data) return <AppShell role="ADMIN"><LoadingState label={slowLoad ? "Preparing server…" : "Loading event workspace…"} /></AppShell>
   if (!data) return <AppShell role="ADMIN"><PageHeader title="Event unavailable" /><ErrorMessage error={error} onRetry={load} /></AppShell>
 
   return (
@@ -244,7 +285,8 @@ export function AdminEventPage() {
         <section className="workspace-main" aria-labelledby="photos-title">
           <div className="photo-filters" aria-label="Photo filters"><div className="field"><label htmlFor="photo-search">Search filename</label><input id="photo-search" className="input" type="search" value={photoSearch} onChange={(event) => setPhotoSearch(event.target.value)} placeholder="Search photos" /></div><div className="field"><label htmlFor="uploader-filter">Uploader</label><select id="uploader-filter" className="select" value={uploaderFilter} onChange={(event) => setUploaderFilter(event.target.value)}><option value="">All uploaders</option>{data.members.map((member) => <option key={member.user.id} value={member.user.id}>{member.user.displayName}</option>)}</select></div><div className="field"><label htmlFor="selection-filter">Gallery selection</label><select id="selection-filter" className="select" value={selectionFilter} onChange={(event) => setSelectionFilter(event.target.value)}><option value="">All photos</option><option value="selected">Selected</option><option value="unselected">Unselected</option></select></div><button className="button button-secondary" type="button" onClick={clearPhotoFilters} disabled={!photoSearch && !uploaderFilter && !selectionFilter}>Clear filters</button></div>
           <div className="toolbar"><strong id="photos-title">{selected.length} selected</strong><div className="toolbar-actions"><button className="text-button" onClick={() => setSelected((current) => [...new Set([...current, ...data.photos.map((photo) => photo.id)])])}>Select loaded</button><button className="text-button" onClick={() => setSelected([])}>Clear selection</button><span className="queue-muted">{photoPage.totalItems} photo{photoPage.totalItems === 1 ? '' : 's'}</span></div></div>
-          {photosLoading && data.photos.length === 0 ? <LoadingState label="Loading photos…" /> : data.photos.length === 0 ? <EmptyState icon={ImageIcon} title={photoPage.totalItems === 0 && !photoSearch && !uploaderFilter && !selectionFilter ? 'No event photos yet' : 'No photos match these filters'} description={photoPage.totalItems === 0 && !photoSearch && !uploaderFilter && !selectionFilter ? 'Assigned Team Members need to upload photographs before you can build the gallery.' : 'Clear or adjust the filters to see other event photos.'} /> : <><div className="photo-grid">{data.photos.map((photo) => {
+          {photosError ? <ErrorMessage error={photosError} onRetry={() => loadPhotos()} /> : null}
+          {photosLoading && data.photos.length === 0 ? <LoadingState label="Loading photos…" /> : data.photos.length === 0 && !photosError ? <EmptyState icon={ImageIcon} title={photoPage.totalItems === 0 && !photoSearch && !uploaderFilter && !selectionFilter ? 'No event photos yet' : 'No photos match these filters'} description={photoPage.totalItems === 0 && !photoSearch && !uploaderFilter && !selectionFilter ? 'Assigned Team Members need to upload photographs before you can build the gallery.' : 'Clear or adjust the filters to see other event photos.'} /> : <><div className="photo-grid">{data.photos.map((photo) => {
             const isSelected = selected.includes(photo.id)
             return <article className="photo-item" key={photo.id}><div className="photo-frame"><button className={`photo-select ${isSelected ? 'photo-select-selected' : ''}`} aria-label={`${isSelected ? 'Remove' : 'Select'} ${photo.filename}`} aria-pressed={isSelected} onClick={() => togglePhoto(photo.id)}>{isSelected ? <Check size={18} /> : null}</button><ProtectedImage path={photo.contentPath} token={token} alt={photo.filename} /></div><div className="photo-meta"><strong title={photo.filename}>{photo.filename}</strong><small>{memberNames.get(photo.uploadedBy) || 'Team member'}</small></div></article>
           })}</div>{photoPage.hasNext ? <div className="load-more"><button className="button button-secondary" onClick={() => loadPhotos(photoPage.page + 1, true)} disabled={photosLoading}>{photosLoading ? 'Loading…' : 'Load more photos'}</button></div> : null}</>}
@@ -253,6 +295,7 @@ export function AdminEventPage() {
           <section className="panel">
             <div className="panel-section">
               <div className="panel-heading"><h2 className="panel-title">Gallery</h2>{gallery ? <span className="status-line"><i className="status-dot" />{gallery.status === 'PUBLISHED' ? 'Published' : 'Draft'}</span> : null}</div>
+              {galleriesError ? <ErrorMessage error={galleriesError} onRetry={load} /> : null}
               {!gallery ? <><p className="selected-note">Create one gallery for this event, then choose its published photographs.</p><button className="button button-primary button-block" onClick={createGallery} disabled={pending === 'gallery'}>{pending === 'gallery' ? 'Creating…' : 'Create gallery'}</button></> : <div className="form-stack">
                 <div className="field"><label>Gallery title</label><input className="input" value={gallery.title} readOnly /></div>
                 <div className="field"><label htmlFor="gallery-pin">{gallery.status === 'PUBLISHED' ? 'Replacement PIN (optional)' : 'Gallery PIN'}</label><div className="input-with-action"><input id="gallery-pin" className="input" type={showPin ? 'text' : 'password'} inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={gallery.pinSet ? 'PIN is set' : 'Six digits'} /><button type="button" className="icon-button" onClick={() => setShowPin((value) => !value)} aria-label={showPin ? 'Hide PIN' : 'Show PIN'}>{showPin ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>{gallery.status === 'PUBLISHED' ? <small>Rotating the PIN signs existing customer sessions out.</small> : null}</div>
@@ -265,7 +308,7 @@ export function AdminEventPage() {
               </div>}
             </div>
           </section>
-          <section className="panel"><div className="panel-section"><div className="panel-heading"><h2 className="panel-title">Team</h2><button className="button button-secondary" onClick={() => setMemberModal(true)}><Plus size={16} />Add</button></div>{data.members.length === 0 ? <p className="selected-note">No team members assigned.</p> : <div className="member-list">{data.members.map((member) => <div className="member-row" key={member.user.id}><span className="profile-avatar">{member.user.displayName.slice(0, 1).toUpperCase()}</span><span><strong>{member.user.displayName}</strong><small>{member.user.email}</small></span></div>)}</div>}</div></section>
+          <section className="panel"><div className="panel-section"><div className="panel-heading"><h2 className="panel-title">Team</h2><button className="button button-secondary" onClick={() => setMemberModal(true)}><Plus size={16} />Add</button></div>{membersError ? <ErrorMessage error={membersError} onRetry={load} /> : null}{data.members.length === 0 && !membersError ? <p className="selected-note">No team members assigned.</p> : <div className="member-list">{data.members.map((member) => <div className="member-row" key={member.user.id}><span className="profile-avatar">{member.user.displayName.slice(0, 1).toUpperCase()}</span><span><strong>{member.user.displayName}</strong><small>{member.user.email}</small></span></div>)}</div>}</div></section>
         </aside>
       </div>
       {memberModal ? <Modal title="Add team member" onClose={() => setMemberModal(false)}><div className="segmented"><button className={memberMode === 'create' ? 'active' : ''} onClick={() => setMemberMode('create')}>Create member</button><button className={memberMode === 'existing' ? 'active' : ''} onClick={() => setMemberMode('existing')}>Assign existing</button></div><form className="form-stack" onSubmit={addMember}><ErrorMessage error={memberError} />{memberMode === 'create' ? <><div className="field"><label htmlFor="member-name">Display name</label><input id="member-name" className="input" required maxLength={100} value={memberValues.displayName} onChange={(event) => setMemberValues({ ...memberValues, displayName: event.target.value })} /></div><div className="field"><label htmlFor="member-email">Email</label><input id="member-email" className="input" type="email" required maxLength={254} value={memberValues.email} onChange={(event) => setMemberValues({ ...memberValues, email: event.target.value })} /></div><div className="field"><label htmlFor="member-password">Initial password</label><input id="member-password" className="input" type="password" required minLength={8} maxLength={128} value={memberValues.password} onChange={(event) => setMemberValues({ ...memberValues, password: event.target.value })} /><small>Use 8–128 characters and communicate this password privately. It will not be shown again.</small></div></> : <div className="field"><label htmlFor="existing-member">Team member</label><select id="existing-member" className="select" required value={memberValues.userId} onChange={(event) => setMemberValues({ ...memberValues, userId: event.target.value })}><option value="">Choose a member</option>{availableRoster.map((user) => <option key={user.id} value={user.id}>{user.displayName} — {user.email}</option>)}</select>{availableRoster.length === 0 ? <small>Every roster member is already assigned to this event.</small> : null}</div>}<div className="form-actions"><button type="button" className="button button-secondary" onClick={() => setMemberModal(false)}>Cancel</button><button className="button button-primary" disabled={pending === 'member' || (memberMode === 'existing' && !memberValues.userId)}>{pending === 'member' ? 'Adding…' : 'Add to event'}</button></div></form></Modal> : null}
