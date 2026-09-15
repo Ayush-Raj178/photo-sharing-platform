@@ -12,15 +12,18 @@ Test and production evidence is described below; automated tests and live checks
 
 ## Demo Access
 
-Request the dedicated demo accounts, gallery URL, and PIN from **Ayush Raj through the internship submission channel**. Real passwords and gallery PINs are intentionally excluded from Git. The entries below are placeholders, not usable credentials.
+Dedicated evaluator demo accounts are prepared for the TrizenAI review.
 
-| Access | Email or URL | Password or PIN |
+| Access | Email or URL | Password / PIN |
 | --- | --- | --- |
-| Admin | `<DEMO_ADMIN_EMAIL>` | `<DEMO_ADMIN_PASSWORD>` |
-| Team Member | `<DEMO_TEAM_EMAIL>` | `<DEMO_TEAM_PASSWORD>` |
-| Gallery | `<DEMO_GALLERY_URL>` | `<DEMO_GALLERY_PIN>` |
+| Admin | `admin@photoshare-demo.example.com` | Provided in submission email |
+| Team Member 1 | `team1@photoshare-demo.example.com` | Provided in submission email |
+| Team Member 2 | `team2@photoshare-demo.example.com` | Provided in submission email |
+| Published Gallery | [Open demo gallery](https://photo-sharing-platform-8mkm.vercel.app/gallery/41e674428df0fb5b6f30df8059f80a58) | PIN provided in submission email |
 
-For an independent walkthrough, register an Admin on the live application, create an event, provision a Team Member, and follow the workflow below. Team Members are provisioned by an Admin rather than through public registration.
+Demo passwords and the gallery PIN are provided privately in the internship submission email and are intentionally excluded from the public repository. The demo emails are login identifiers, not monitored inboxes.
+
+The main `TrizenAI Demo Event` contains 30 uploaded images from two Team Members, with 18 published and 12 left unselected, so reviewers can immediately test pagination, search, uploader filtering, selection filtering, and gallery access.
 
 ## Core Workflow
 
@@ -325,8 +328,12 @@ photo-sharing-platform/
 | Architecture / database explanation | System Architecture and Database Design, including Mermaid diagrams and migration links |
 | Local setup and environment variables | Local Development and Environment Variables sections |
 | Live application and deployment | Linked production app, Vercel Services, Aiven MySQL, Cloudinary, and deployment guide |
-| Demo credentials | Private handoff through Ayush Raj; placeholder inventory in Demo Access |
+| Demo credentials | Dedicated demo account emails and gallery link in Demo Access; passwords and PIN shared privately with the submission |
 | Deployment steps and known limitations | Deployment and Known Limitations sections |
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ## Author
 
