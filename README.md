@@ -15,15 +15,15 @@ Test and production evidence is described below; automated tests and live checks
 Dedicated evaluator demo accounts are prepared for the TrizenAI review.
 
 | Access | Email or URL | Password / PIN |
-| --- | --- | --- |
-| Admin | `admin@photoshare-demo.example.com` | Provided in submission email |
-| Team Member 1 | `team1@photoshare-demo.example.com` | Provided in submission email |
-| Team Member 2 | `team2@photoshare-demo.example.com` | Provided in submission email |
-| Published Gallery | [Open demo gallery](https://photo-sharing-platform-8mkm.vercel.app/gallery/41e674428df0fb5b6f30df8059f80a58) | PIN provided in submission email |
+|---|---|---|
+| Admin | `testadmin@example.com` | Provided in submission email |
+| Team Member 1 | `team1@example.com` | Provided in submission email |
+| Team Member 2 | `team2@example.com` | Provided in submission email |
+| Published Gallery | [Open demo gallery](https://photo-sharing-platform-8mkm.vercel.app/gallery/39fb4b411140a7db0023806e0bbd155a) | PIN provided in submission email |
 
-Demo passwords and the gallery PIN are provided privately in the internship submission email and are intentionally excluded from the public repository. The demo emails are login identifiers, not monitored inboxes.
+> **Evaluator demo:** The `Recruiter Demo Event` contains 50+ photos uploaded by two Team Members. It can be used to review multi-photo uploads, photo browsing and filtering, gallery selection and publishing, and PIN-protected customer access.
 
-The main `TrizenAI Demo Event` contains 30 uploaded images from two Team Members, with 18 published and 12 left unselected, so reviewers can immediately test pagination, search, uploader filtering, selection filtering, and gallery access.
+> Passwords and the gallery PIN are intentionally not stored in the repository. They are provided separately in the submission email.
 
 ## Core Workflow
 
